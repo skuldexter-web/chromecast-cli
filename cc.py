@@ -38,7 +38,7 @@ def discover(show=True, timeout=DEFAULT_DISCOVERY_TIMEOUT):
         if not casts:
             print("No Chromecast devices found.")
         for i, cast in enumerate(casts):
-            print(f"[{i}] {cast.name} - {cast.host}:{cast.port}")
+            print(f"[{i}] {cast.name} - {cast.cast_info.host}:{cast.cast_info.port}")
     return casts
 
 
@@ -71,18 +71,25 @@ def guess_content_type(url):
     return content_type or "video/mp4"
 
 
+def format_volume(level):
+    """Format a volume_level (0.0-1.0 or None) as a percentage string."""
+    if level is None:
+        return "unknown"
+    return f"{level:.0%}"
+
+
 def print_status(cast):
     """Wait for status update and print it."""
     cast.wait()
     print(f"Name: {cast.name}")
     print(f"Model: {cast.model_name}")
-    print(f"Host: {cast.host}:{cast.port}")
+    print(f"Host: {cast.cast_info.host}:{cast.cast_info.port}")
     print(f"UUID: {cast.uuid}")
 
     print(f"Friendly Name: {cast.cast_info.friendly_name}")
     print(f"Cast Type: {cast.cast_info.cast_type}")
     print(f"Status: {cast.status.display_name}")
-    print(f"Volume: {cast.status.volume_level:.0%} (muted: {cast.status.volume_muted})")
+    print(f"Volume: {format_volume(cast.status.volume_level)} (muted: {cast.status.volume_muted})")
 
     if cast.media_controller.status and cast.media_controller.status.title is not None:
         ms = cast.media_controller.status
@@ -157,8 +164,10 @@ def main():
         parser.print_help()
         sys.exit(0)
 
-    if args.level if hasattr(args, "level") else False:
-        if args.level is not None and not (0 <= args.level <= 100):
+    # Only validate range when a volume level was actually provided.
+    # (Using `if args.level:` would wrongly skip validation for level 0.)
+    if getattr(args, "level", None) is not None:
+        if not (0 <= args.level <= 100):
             sys.exit("Volume level must be between 0 and 100.")
 
     if args.command == "scan":
@@ -199,20 +208,22 @@ def main():
                 cast.set_volume(args.level / 100.0)
                 print(f"Volume set to {args.level}%")
             else:
-                print(f"Volume: {cast.status.volume_level:.0%}")
+                print(f"Volume: {format_volume(cast.status.volume_level)}")
                 print(f"Muted: {cast.status.volume_muted}")
 
         elif args.command == "volup":
-            new_vol = cast.status.volume_level + args.delta / 100.0
+            current = cast.status.volume_level or 0.0
+            new_vol = current + args.delta / 100.0
             cast.set_volume(min(1.0, new_vol))
             cast.wait()
-            print(f"Volume up -> {cast.status.volume_level:.0%}")
+            print(f"Volume up -> {format_volume(cast.status.volume_level)}")
 
         elif args.command == "voldown":
-            new_vol = cast.status.volume_level - args.delta / 100.0
+            current = cast.status.volume_level or 0.0
+            new_vol = current - args.delta / 100.0
             cast.set_volume(max(0.0, new_vol))
             cast.wait()
-            print(f"Volume down -> {cast.status.volume_level:.0%}")
+            print(f"Volume down -> {format_volume(cast.status.volume_level)}")
 
         elif args.command == "mute":
             cast.set_volume_muted(True)
